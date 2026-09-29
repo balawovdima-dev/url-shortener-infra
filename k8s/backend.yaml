@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: url-shortener
+data: # non-sensitive settings
+  LOG_LEVEL: info
+  SHORT_URL_BASE: http://localhost
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backend-secret
+  namespace: url-shortener
+type: Opaque
+stringData:
+  # "postgres" here is the SERVICE NAME — cluster DNS resolves it. Never a pod IP.
+  DATABASE_URL: postgresql+psycopg://shortener:localdevpassword@postgres:5432/shortener
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: url-shortener
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          # CHANGE ME: your image from CI, pinned to a git SHA tag
+          image: ghcr.io/balawovdima-dev/url-shortener-backend:latest
+          ports:
+            - containerPort: 8000 # CHANGE ME if your app listens elsewhere
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secret
+          readinessProbe: # "can this pod receive traffic yet?"
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe: # "is this container stuck? restart it"
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: # guaranteed; used for scheduling
+              cpu: 100m
+              memory: 128Mi
+            limits: # hard ceiling; exceeding memory = OOMKill
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: url-shortener
+spec:
+  type: ClusterIP # internal only; the Ingress is the public entrance
+  selector:
+    app: backend
+  ports:
+    - port: 80 # other pods call http://backend
+      targetPort: 8000 # container port
