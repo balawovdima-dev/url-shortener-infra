@@ -17,7 +17,7 @@ log() { printf '\n==> %s\n' "$*"; }
 tf_out() { terraform -chdir="$TF_DIR" output -raw "$1"; }
 
 INSTANCE_ID="$(tf_out node_instance_id)"
-PUBLIC_IP="$(tf_out node_public_ip)"
+DOMAIN="$(tf_out domain)"
 
 log "Waiting for $INSTANCE_ID to come online in SSM"
 until [ "$(aws ssm describe-instance-information \
@@ -57,17 +57,23 @@ kubectl wait --for=condition=Ready node --all --timeout=300s
 until kubectl -n kube-system get deploy/traefik >/dev/null 2>&1; do sleep 5; done
 kubectl -n kube-system rollout status deploy/traefik --timeout=300s
 
-log "Namespace and DB Secret"
+log "Namespace, DB and TLS Secrets"
 kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
 # Value goes through a file descriptor, never through argv (visible in `ps`).
 SECRET_RESULT="$(kubectl -n "$NS" create secret generic backend-secret \
   --from-env-file=<(printf 'DATABASE_URL=%s\n' "$(tf_out database_url)") \
   --dry-run=client -o yaml | kubectl apply -f -)"
 echo "$SECRET_RESULT"
+# Cloudflare Origin CA cert for Traefik (Cloudflare SSL mode "Full (strict)").
+kubectl -n "$NS" create secret tls origin-tls \
+  --cert=<(tf_out origin_cert_pem) --key=<(tf_out origin_key_pem) \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 log "Deploying the chart (migrations run as a pre-install/upgrade hook)"
 helm upgrade --install url-shortener "$ROOT/charts/url-shortener" -n "$NS" \
-  --set publicUrl="http://$PUBLIC_IP" --wait --timeout 5m
+  --set publicUrl="https://$DOMAIN" \
+  --set ingress.host="$DOMAIN" --set ingress.tlsSecret=origin-tls \
+  --wait --timeout 5m
 
 # envFrom is read only at pod start, so a rotated password needs a restart.
 if [[ "$SECRET_RESULT" == *configured* ]]; then
@@ -76,7 +82,7 @@ if [[ "$SECRET_RESULT" == *configured* ]]; then
   kubectl -n "$NS" rollout status deploy/backend --timeout=180s
 fi
 
-log "Smoke test"
-curl -fsS "http://$PUBLIC_IP/healthz" && echo
-echo "App: http://$PUBLIC_IP"
+log "Smoke test (through Cloudflare)"
+curl -fsS --retry 5 --retry-all-errors --retry-delay 5 "https://$DOMAIN/healthz" && echo
+echo "App: https://$DOMAIN"
 echo "kubectl: export KUBECONFIG=$KUBECONFIG"

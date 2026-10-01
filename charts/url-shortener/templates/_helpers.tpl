@@ -25,3 +25,12 @@ imagePullPolicy: {{ . }}
       port:
         number: 80
 {{- end }}
+
+{{- define "url-shortener.ingressTLS" -}}
+tls:
+  - secretName: {{ .Values.ingress.tlsSecret | quote }}
+    {{- with .Values.ingress.host }}
+    hosts:
+      - {{ . | quote }}
+    {{- end }}
+{{- end }}

@@ -14,13 +14,14 @@ scripts/bootstrap-cluster.sh
 
 It fetches the kubeconfig over SSM, opens a tunnel to the API on
 `localhost:6443`, creates the namespace and `backend-secret` from
-`terraform output database_url`, and installs this chart with
-`publicUrl=http://<node EIP>`. Safe to re-run.
+`terraform output database_url`, the `origin-tls` Secret from the Cloudflare
+Origin CA cert, and installs this chart with `publicUrl=https://<domain>`,
+`ingress.host=<domain>` and `ingress.tlsSecret=origin-tls`. Safe to re-run.
 
 ## What lives outside the chart
 
-The namespace and the `backend-secret` Secret (`DATABASE_URL`) are created by the
-script, not the release, so `helm uninstall` never deletes credentials and the
+The namespace and the `backend-secret` (`DATABASE_URL`) and `origin-tls`
+Secrets are created by the script, not the release, so `helm uninstall` never deletes credentials and the
 password never lands in Helm release history.
 
 ## Behaviour worth knowing
@@ -31,6 +32,9 @@ password never lands in Helm release history.
 - Changing `backend.config` or `publicUrl` rolls the backend pods automatically
   (`checksum/config` annotation).
 - `publicUrl` is required; the backend builds short links from it.
+- With `ingress.tlsSecret` set, Traefik serves the routes on 443 only; plain
+  HTTP to the node returns 404. That's fine behind Cloudflare, which always
+  connects over HTTPS ("Full (strict)") and redirects visitors to HTTPS.
 - `helm upgrade` without `-f`/`--set` **reuses the previous release's values**;
   pass `--reset-values` to go back to `values.yaml`.
 - Pin images per deploy: `--set backend.image.tag=<git-sha> --set frontend.image.tag=<git-sha>`.

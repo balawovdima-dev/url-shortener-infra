@@ -31,3 +31,17 @@ output "database_url" {
   value     = "postgresql+psycopg://${aws_db_instance.main.username}:${random_password.db.result}@${aws_db_instance.main.address}:${aws_db_instance.main.port}/${aws_db_instance.main.db_name}"
   sensitive = true
 }
+
+output "domain" {
+  value = var.domain
+}
+
+# Read by scripts/bootstrap-cluster.sh to create the origin-tls Secret.
+output "origin_cert_pem" {
+  value = cloudflare_origin_ca_certificate.origin.certificate
+}
+
+output "origin_key_pem" {
+  value     = tls_private_key.origin.private_key_pem
+  sensitive = true
+}

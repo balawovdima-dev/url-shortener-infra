@@ -1,5 +1,5 @@
 # Origin the browser uses to reach the Ingress; the backend builds short links from it (BASE_URL).
-# Required, e.g. --set publicUrl=http://<node EIP>
+# Required, e.g. --set publicUrl=https://supabase.win
 publicUrl: ""
 
 backend:
@@ -42,3 +42,7 @@ ingress:
   enabled: true
   className: traefik # k3s bundled controller
   host: "" # empty = match any host
+  # kubernetes.io/tls Secret for `host`, created outside the chart (the
+  # Cloudflare Origin CA cert, see scripts/bootstrap-cluster.sh). Empty = no TLS.
+  # With TLS set, Traefik serves these routes on 443 only.
+  tlsSecret: ""

@@ -13,6 +13,9 @@ metadata:
     traefik.ingress.kubernetes.io/router.priority: "1000"
 spec:
   ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tlsSecret }}
+  {{- include "url-shortener.ingressTLS" . | nindent 2 }}
+  {{- end }}
   rules:
     - {{- with .Values.ingress.host }}
       host: {{ . | quote }}
@@ -32,6 +35,9 @@ metadata:
     {{- include "url-shortener.labels" . | nindent 4 }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tlsSecret }}
+  {{- include "url-shortener.ingressTLS" . | nindent 2 }}
+  {{- end }}
   rules:
     - {{- with .Values.ingress.host }}
       host: {{ . | quote }}
