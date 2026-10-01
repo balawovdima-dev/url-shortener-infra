@@ -2,6 +2,4 @@ url-shortener {{ .Chart.Version }} deployed to namespace {{ .Release.Namespace }
 
 Backend reads DB credentials from Secret "{{ .Values.backend.existingSecret }}" (not managed by this chart).
 
-Local access through the ingress controller:
-  kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 18080:80
-  open {{ .Values.publicUrl }}
+Open: {{ .Values.publicUrl }}

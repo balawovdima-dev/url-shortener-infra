@@ -1,5 +1,6 @@
 # Origin the browser uses to reach the Ingress; the backend builds short links from it (BASE_URL).
-publicUrl: http://127.0.0.1:18080
+# Required, e.g. --set publicUrl=http://<node EIP>
+publicUrl: ""
 
 backend:
   replicas: 2
@@ -10,6 +11,9 @@ backend:
   containerPort: 8000
   # Secret with DATABASE_URL, created outside the chart so credentials never land in release history.
   existingSecret: backend-secret
+  # Run `alembic upgrade head` as a Helm hook before every install/upgrade.
+  migrations:
+    enabled: true
   # Extra non-sensitive env vars, rendered into the backend-config ConfigMap.
   config:
     LOG_LEVEL: info
@@ -36,5 +40,5 @@ frontend:
 
 ingress:
   enabled: true
-  className: nginx # must match the installed controller
+  className: traefik # k3s bundled controller
   host: "" # empty = match any host

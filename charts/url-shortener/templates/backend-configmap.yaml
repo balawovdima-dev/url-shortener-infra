@@ -6,7 +6,7 @@ metadata:
     {{- include "url-shortener.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
 data: # non-sensitive settings
-  BASE_URL: {{ .Values.publicUrl | quote }}
+  BASE_URL: {{ required "publicUrl is required (e.g. --set publicUrl=http://<node EIP>)" .Values.publicUrl | quote }}
   {{- range $k, $v := .Values.backend.config }}
   {{ $k }}: {{ $v | quote }}
   {{- end }}

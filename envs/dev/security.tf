@@ -1,5 +1,7 @@
 resource "aws_security_group" "node" {
-  name        = "url-shortener-dev-node"
+  name = "url-shortener-dev-node"
+  # Description is stale (no K8s API rule exists; admin access is via SSM only),
+  # but changing it forces replacing the security group, so it stays.
   description = "k3s node: public HTTP/HTTPS, Kubernetes API from admin only"
   vpc_id      = module.vpc.vpc_id
 

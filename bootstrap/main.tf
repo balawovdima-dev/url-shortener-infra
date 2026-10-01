@@ -6,6 +6,16 @@ terraform {
       version = "~> 6.0"
     }
   }
+
+  # The bucket this config creates also stores its own state (migrated after
+  # the first local apply with `terraform init -migrate-state`).
+  backend "s3" {
+    bucket       = "super-bucket-db"
+    key          = "bootstrap/terraform.tfstate"
+    region       = "eu-central-1"
+    encrypt      = true
+    use_lockfile = true
+  }
 }
 
 provider "aws" {

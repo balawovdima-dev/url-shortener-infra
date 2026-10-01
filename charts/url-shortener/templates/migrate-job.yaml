@@ -1,0 +1,31 @@
+{{- if .Values.backend.migrations.enabled -}}
+{{- $b := .Values.backend -}}
+# Runs before the new backend pods, so they never start against an old schema.
+# Uses the existing Secret, which is why that Secret lives outside the chart.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backend-migrate
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrations
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: backend-migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          {{- include "url-shortener.image" $b.image | nindent 10 }}
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - secretRef:
+                name: {{ $b.existingSecret }}
+{{- end }}
