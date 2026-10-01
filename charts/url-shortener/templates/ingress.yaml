@@ -1,0 +1,22 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: url-shortener
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - {{- with .Values.ingress.host }}
+      host: {{ . | quote }}
+      {{- end }}
+      http:
+        paths:
+          # Frontend owns only its page and assets...
+          {{- include "url-shortener.ingressPath" (dict "path" "/" "type" "Exact" "svc" "frontend") | nindent 10 }}
+          {{- include "url-shortener.ingressPath" (dict "path" "/_next" "type" "Prefix" "svc" "frontend") | nindent 10 }}
+          {{- include "url-shortener.ingressPath" (dict "path" "/favicon.ico" "type" "Exact" "svc" "frontend") | nindent 10 }}
+          # ...everything else (/api/*, /healthz, /<code> redirects) is the backend.
+          {{- include "url-shortener.ingressPath" (dict "path" "/" "type" "Prefix" "svc" "backend") | nindent 10 }}
+{{- end }}

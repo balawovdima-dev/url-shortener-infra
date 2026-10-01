@@ -1,0 +1,60 @@
+{{- $b := .Values.backend -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ $b.replicas }}
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+      annotations:
+        # Roll pods whenever the ConfigMap changes (envFrom is only read at start).
+        checksum/config: {{ include (print $.Template.BasePath "/backend-configmap.yaml") . | sha256sum | trunc 16 }}
+    spec:
+      containers:
+        - name: backend
+          {{- include "url-shortener.image" $b.image | nindent 10 }}
+          ports:
+            - containerPort: {{ $b.containerPort }}
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: {{ $b.existingSecret }}
+          readinessProbe: # "can this pod receive traffic yet?"
+            httpGet:
+              path: /healthz
+              port: {{ $b.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe: # "is this container stuck? restart it"
+            httpGet:
+              path: /healthz
+              port: {{ $b.containerPort }}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml $b.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  labels:
+    {{- include "url-shortener.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP # internal only; the Ingress is the public entrance
+  selector:
+    app: backend
+  ports:
+    - port: 80
+      targetPort: {{ $b.containerPort }}

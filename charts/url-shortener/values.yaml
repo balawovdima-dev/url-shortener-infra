@@ -1,0 +1,40 @@
+# Origin the browser uses to reach the Ingress; the backend builds short links from it (BASE_URL).
+publicUrl: http://127.0.0.1:18080
+
+backend:
+  replicas: 2
+  image:
+    repository: ghcr.io/balawovdima-dev/url-shortener-backend
+    tag: latest # pin to a git SHA per deploy: --set backend.image.tag=<sha>
+    pullPolicy: "" # empty = Kubernetes default (Always for :latest)
+  containerPort: 8000
+  # Secret with DATABASE_URL, created outside the chart so credentials never land in release history.
+  existingSecret: backend-secret
+  # Extra non-sensitive env vars, rendered into the backend-config ConfigMap.
+  config:
+    LOG_LEVEL: info
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+frontend:
+  replicas: 2
+  image:
+    repository: ghcr.io/balawovdima-dev/url-shortener-frontend
+    tag: latest
+    pullPolicy: ""
+  containerPort: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+ingress:
+  enabled: true
+  className: nginx # must match the installed controller
+  host: "" # empty = match any host
