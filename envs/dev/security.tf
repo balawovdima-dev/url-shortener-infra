@@ -1,28 +1,30 @@
 resource "aws_security_group" "node" {
-  name = "url-shortener-dev-node"
-  # Description is stale (no K8s API rule exists; admin access is via SSM only),
-  # but changing it forces replacing the security group, so it stays.
-  description = "k3s node: public HTTP/HTTPS, Kubernetes API from admin only"
+  # name_prefix + create_before_destroy: changing the description replaces the
+  # group, and the new one must exist before the node lets go of the old one.
+  name_prefix = "url-shortener-dev-node-"
+  description = "k3s node: HTTPS from Cloudflare only, admin via SSM"
   vpc_id      = module.vpc.vpc_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   tags = {
     Name = "url-shortener-dev-node"
   }
 }
 
-resource "aws_vpc_security_group_ingress_rule" "node_http" {
-  security_group_id = aws_security_group.node.id
-  description       = "HTTP from anywhere"
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "tcp"
-  from_port         = 80
-  to_port           = 80
-}
+# Cloudflare's edge is the only client of the origin (proxied DNS, SSL mode
+# "Full (strict)" over 443). No port 80: Cloudflare redirects visitors to
+# HTTPS itself, and Traefik answers plain HTTP with 404 anyway.
+data "cloudflare_ip_ranges" "cf" {}
 
-resource "aws_vpc_security_group_ingress_rule" "node_https" {
+resource "aws_vpc_security_group_ingress_rule" "node_https_cloudflare" {
+  for_each = toset(data.cloudflare_ip_ranges.cf.ipv4_cidrs)
+
   security_group_id = aws_security_group.node.id
-  description       = "HTTPS from anywhere"
-  cidr_ipv4         = "0.0.0.0/0"
+  description       = "HTTPS from Cloudflare"
+  cidr_ipv4         = each.value
   ip_protocol       = "tcp"
   from_port         = 443
   to_port           = 443
@@ -34,7 +36,6 @@ resource "aws_vpc_security_group_egress_rule" "node_all" {
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }
-
 
 resource "aws_security_group" "db" {
   name        = "url-shortener-dev-db"
