@@ -3,6 +3,13 @@ resource "random_password" "db" {
   special = false # avoids URL-encoding headaches in connection strings
 }
 
+# The prod environment's own role and database on the same instance, created
+# by scripts/bootstrap-cluster.sh (RDS is private: Terraform can't reach it).
+resource "random_password" "db_prod" {
+  length  = 32
+  special = false
+}
+
 resource "aws_db_subnet_group" "main" {
   name       = "url-shortener-dev"
   subnet_ids = module.vpc.private_subnet_ids

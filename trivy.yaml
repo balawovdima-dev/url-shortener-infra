@@ -1,6 +1,0 @@
-# Read by `trivy config` (locally and in CI). The chart only renders with
-# publicUrl set; without it Trivy silently skips the whole chart.
-misconfiguration:
-  helm:
-    set:
-      - publicUrl=https://example.com

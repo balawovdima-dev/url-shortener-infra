@@ -9,7 +9,8 @@ both read them from `AWS_PROFILE`.
 
 1. **Organizations**: create an organization. This account becomes the
    management account, and Identity Center needs one.
-2. **IAM Identity Center**: Enable in `eu-central-1`, keeping *Identity Center
+2. **IAM Identity Center**: Enable (ours lives in `us-east-1`; its region only
+   hosts the portal and users, resources stay in `eu-central-1`), keeping *Identity Center
    directory* as the identity source.
 3. **Settings → Authentication**: require MFA at every sign-in.
 4. **Users**: create yourself and accept the invitation email (set a password
@@ -21,8 +22,9 @@ both read them from `AWS_PROFILE`.
 ## Local CLI
 
 ```sh
-aws configure sso          # SSO start URL from the Identity Center dashboard,
-                           # region eu-central-1, profile name: url-shortener
+aws configure sso          # start URL: Identity Center dashboard -> AWS access portal URL
+                           # SSO region: us-east-1 (where Identity Center lives)
+                           # CLI default region: eu-central-1, profile name: url-shortener
 aws sso login --profile url-shortener
 export AWS_PROFILE=url-shortener
 

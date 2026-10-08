@@ -1,0 +1,52 @@
+# Creates prod's role and database on the shared RDS instance. Applied by
+# scripts/bootstrap-cluster.sh into the throwaway db-admin namespace, whose
+# db-admin Secret holds the master connection URL and prod's password.
+# Idempotent: re-running only resets the password to terraform's.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-prod-db
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70 # postgres user in the alpine image
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: psql
+          image: postgres:17-alpine
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: HOME # psql and sh may write here (history, heredoc temp files)
+              value: /tmp
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          envFrom:
+            - secretRef:
+                name: db-admin
+          command:
+            - sh
+            - -c
+            - |
+              psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -v pw="$PROD_PASSWORD" <<'SQL'
+              SELECT 'CREATE ROLE shortener_prod LOGIN'
+                WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'shortener_prod') \gexec
+              ALTER ROLE shortener_prod PASSWORD :'pw';
+              -- PG16+: the master may only create a DB owned by a role it can SET ROLE to.
+              GRANT shortener_prod TO CURRENT_USER;
+              SELECT 'CREATE DATABASE shortener_prod OWNER shortener_prod'
+                WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'shortener_prod') \gexec
+              SQL
+      volumes:
+        - name: tmp
+          emptyDir: {}

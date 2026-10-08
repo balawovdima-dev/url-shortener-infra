@@ -24,6 +24,16 @@ resource "cloudflare_dns_record" "apex" {
   ttl     = 1 # automatic (required for proxied records)
 }
 
+# dev environment (prod is the apex); covered by the *.domain Origin CA cert.
+resource "cloudflare_dns_record" "dev" {
+  zone_id = data.cloudflare_zone.main.zone_id
+  name    = "dev.${var.domain}"
+  type    = "A"
+  content = aws_eip.node.public_ip
+  proxied = true
+  ttl     = 1
+}
+
 resource "cloudflare_zone_setting" "ssl" {
   zone_id    = data.cloudflare_zone.main.zone_id
   setting_id = "ssl"
@@ -53,8 +63,10 @@ resource "tls_cert_request" "origin" {
 }
 
 resource "cloudflare_origin_ca_certificate" "origin" {
-  csr                = tls_cert_request.origin.cert_request_pem
-  hostnames          = [var.domain, "*.${var.domain}"]
+  csr = tls_cert_request.origin.cert_request_pem
+  # In the order the API returns them; any other order shows as a perpetual
+  # diff that forces a new certificate.
+  hostnames          = ["*.${var.domain}", var.domain]
   request_type       = "origin-ecc"
   requested_validity = 5475 # 15 years, the maximum
 }
