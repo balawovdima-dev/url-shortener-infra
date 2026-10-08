@@ -16,7 +16,10 @@ resource "aws_instance" "node" {
   iam_instance_profile   = aws_iam_instance_profile.node.name
 
   metadata_options {
-    http_tokens = "required" # IMDSv2 only
+    http_endpoint               = "enabled"
+    http_tokens                 = "required" # IMDSv2 only
+    http_put_response_hop_limit = 1          # pods are one hop further: no node-role credentials for them
+    instance_metadata_tags      = "disabled"
   }
 
   user_data = <<-EOF
@@ -58,6 +61,7 @@ resource "aws_instance" "node" {
   }
 }
 
+# Also pins the bundled Traefik: each k3s release ships one Traefik chart version.
 variable "k3s_version" {
   description = "k3s release installed on the node (bump deliberately: changing it rebuilds the node)"
   type        = string
