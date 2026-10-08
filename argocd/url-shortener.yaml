@@ -1,0 +1,28 @@
+# Deploys charts/url-shortener from main; every push there reaches the cluster.
+# Applied by scripts/bootstrap-cluster.sh, which also creates the Secrets the
+# chart expects (backend-secret, origin-tls) — they never live in git.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: url-shortener # = Helm release name, so chart labels stay the same
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/dimabalawov/url-shortener-infra.git
+    targetRevision: main
+    path: charts/url-shortener
+    helm:
+      # Must match `terraform output domain`; the bootstrap script checks it.
+      valuesObject:
+        publicUrl: https://supabase.win
+        ingress:
+          host: supabase.win
+          tlsSecret: origin-tls
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: url-shortener
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
