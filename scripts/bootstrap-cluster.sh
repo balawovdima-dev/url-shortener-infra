@@ -100,9 +100,23 @@ for ENV in dev prod; do
     --dry-run=client -o yaml | kubectl apply -f -
 done
 
+log "Namespace monitoring and its Secrets"
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+# Telegram bot token for Alertmanager, from ~/.config/urlshortener.env.
+: "${TELEGRAM_BOT_TOKEN:?set it in ~/.config/urlshortener.env and source that file}"
+kubectl -n monitoring create secret generic alertmanager-telegram \
+  --from-file=bot_token=<(printf '%s' "$TELEGRAM_BOT_TOKEN") \
+  --dry-run=client -o yaml | kubectl apply -f -
+# Grafana admin password: generated once, kept across re-runs.
+if ! kubectl -n monitoring get secret grafana-admin >/dev/null 2>&1; then
+  kubectl -n monitoring create secret generic grafana-admin \
+    --from-literal=admin-user=admin \
+    --from-env-file=<(printf 'admin-password=%s\n' "$(openssl rand -base64 24 | tr -d '/+=')")
+fi
+
 log "Root Application: ArgoCD deploys apps/ from url-shortener-gitops"
 kubectl apply -f "$ROOT/argocd/root.yaml"
-for APP in root url-shortener-dev url-shortener-prod; do
+for APP in root url-shortener-dev url-shortener-prod monitoring loki alloy monitoring-config; do
   until kubectl -n argocd get "application/$APP" >/dev/null 2>&1; do sleep 5; done
   kubectl -n argocd wait "application/$APP" --timeout=600s \
     --for=jsonpath='{.status.sync.status}'=Synced

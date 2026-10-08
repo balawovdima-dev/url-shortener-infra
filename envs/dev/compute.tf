@@ -10,7 +10,7 @@ data "aws_ami" "ubuntu" {
 
 resource "aws_instance" "node" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3.medium"
+  instance_type          = "t3.large"                      # 8 GB: app + ArgoCD + Prometheus/Grafana/Loki
   subnet_id              = module.vpc.public_subnet_ids[0] # public: serves HTTP via the Elastic IP below
   vpc_security_group_ids = [aws_security_group.node.id]
   iam_instance_profile   = aws_iam_instance_profile.node.name
@@ -51,7 +51,7 @@ resource "aws_instance" "node" {
   }
 
   root_block_device {
-    volume_size = 20
+    volume_size = 40 # Prometheus and Loki data (local-path volumes)
     volume_type = "gp3"
     encrypted   = true
   }
