@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/dimabalawov/url-shortener-infra.git
+    repoURL: https://github.com/balawovdima-dev/url-shortener-infra.git
     targetRevision: main
     path: charts/url-shortener
     helm:
