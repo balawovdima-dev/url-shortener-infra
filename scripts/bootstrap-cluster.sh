@@ -110,8 +110,7 @@ kubectl -n monitoring create secret generic alertmanager-telegram \
 # Grafana admin password: generated once, kept across re-runs.
 if ! kubectl -n monitoring get secret grafana-admin >/dev/null 2>&1; then
   kubectl -n monitoring create secret generic grafana-admin \
-    --from-literal=admin-user=admin \
-    --from-env-file=<(printf 'admin-password=%s\n' "$(openssl rand -base64 24 | tr -d '/+=')")
+    --from-env-file=<(printf 'admin-user=admin\nadmin-password=%s\n' "$(openssl rand -base64 24 | tr -d '/+=')")
 fi
 
 log "Root Application: ArgoCD deploys apps/ from url-shortener-gitops"
