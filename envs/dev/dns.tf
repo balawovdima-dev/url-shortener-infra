@@ -24,6 +24,16 @@ resource "cloudflare_dns_record" "apex" {
   ttl     = 1 # automatic (required for proxied records)
 }
 
+# dev environment (prod is the apex); covered by the *.domain Origin CA cert.
+resource "cloudflare_dns_record" "dev" {
+  zone_id = data.cloudflare_zone.main.zone_id
+  name    = "dev.${var.domain}"
+  type    = "A"
+  content = aws_eip.node.public_ip
+  proxied = true
+  ttl     = 1
+}
+
 resource "cloudflare_zone_setting" "ssl" {
   zone_id    = data.cloudflare_zone.main.zone_id
   setting_id = "ssl"

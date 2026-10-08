@@ -12,8 +12,3 @@ AWS-0164
 # costs money and adds nothing for a single-account dev setup.
 AWS-0132
 
-# TODO: backend/frontend pods have no securityContext (runAsNonRoot,
-# readOnlyRootFilesystem, drop ALL). Real gap, ignored only until the images
-# are checked to run that way (Next.js writes .next/cache, needs an emptyDir).
-KSV-0014
-KSV-0118

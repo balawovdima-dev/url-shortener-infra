@@ -2,8 +2,10 @@
 # Turn a (fresh or existing) k3s node into a running url-shortener.
 # Idempotent: safe to re-run at any time.
 #
-# Steps: k3s (+ bundled Traefik) ready -> ArgoCD -> Secrets from terraform
-# output -> ArgoCD Application for charts/url-shortener -> smoke test.
+# Steps: k3s (+ bundled Traefik) ready -> ArgoCD -> prod database -> per-env
+# namespaces and Secrets from terraform output -> root ArgoCD Application
+# (argocd/root.yaml), which deploys everything else from url-shortener-gitops
+# -> smoke test of both environments.
 #
 # Needs: aws CLI (`aws sso login`, see docs/aws-access.md) + session-manager-plugin,
 # terraform, kubectl, helm.
@@ -15,9 +17,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TF_DIR="$ROOT/envs/dev"
 export AWS_REGION="${AWS_REGION:-eu-central-1}"
 export KUBECONFIG="$HOME/.kube/url-shortener-dev.yaml"
-NS=url-shortener
 ARGOCD_CHART_VERSION=10.10.1 # argo-cd chart (ArgoCD v3.5.4); bump deliberately
-APP_MANIFEST="$ROOT/argocd/url-shortener.yaml"
 
 log() { printf '\n==> %s\n' "$*"; }
 tf_out() { terraform -chdir="$TF_DIR" output -raw "$1"; }
@@ -68,43 +68,59 @@ helm upgrade --install argocd argo-cd --repo https://argoproj.github.io/argo-hel
   --version "$ARGOCD_CHART_VERSION" -n argocd --create-namespace \
   -f "$ROOT/argocd/values.yaml" --wait --timeout 10m
 
-log "Namespace, DB and TLS Secrets"
-kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
-# Value goes through a file descriptor, never through argv (visible in `ps`).
-SECRET_RESULT="$(kubectl -n "$NS" create secret generic backend-secret \
-  --from-env-file=<(printf 'DATABASE_URL=%s\n' "$(tf_out database_url)") \
-  --dry-run=client -o yaml | kubectl apply -f -)"
-echo "$SECRET_RESULT"
-# Cloudflare Origin CA cert for Traefik (Cloudflare SSL mode "Full (strict)").
-kubectl -n "$NS" create secret tls origin-tls \
-  --cert=<(tf_out origin_cert_pem) --key=<(tf_out origin_key_pem) \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-log "Deploying the chart via ArgoCD (migrations run as a PreSync hook)"
-# The Application lives in git, so its domain is a literal: keep it in sync.
-grep -q "host: $DOMAIN\$" "$APP_MANIFEST" || {
-  echo "$APP_MANIFEST does not use domain $DOMAIN (terraform output domain)" >&2
-  exit 1
-}
-# One-time hand-over from a plain Helm release: drop only Helm's release
-# records (never `helm uninstall`, which deletes the app); ArgoCD adopts the
-# resources, which keep their names and selectors.
-kubectl -n "$NS" delete secret -l owner=helm,name=url-shortener --ignore-not-found
-kubectl apply -f "$APP_MANIFEST"
-kubectl -n argocd wait application/url-shortener --timeout=600s \
-  --for=jsonpath='{.status.sync.status}'=Synced
-kubectl -n argocd wait application/url-shortener --timeout=600s \
-  --for=jsonpath='{.status.health.status}'=Healthy
+log "Prod database and role on RDS (idempotent)"
+# RDS is private, so this runs as a Job inside the cluster. The admin URL is
+# dev's (the master user), minus the SQLAlchemy driver suffix psql rejects.
+kubectl create namespace db-admin --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n db-admin create secret generic db-admin \
+  --from-env-file=<(printf 'ADMIN_URL=%s\nPROD_PASSWORD=%s\n' \
+    "$(tf_out database_url | sed 's/+psycopg//')" "$(tf_out db_prod_password)") \
+  --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl -n db-admin delete job create-prod-db --ignore-not-found
+kubectl -n db-admin apply -f "$ROOT/argocd/create-prod-db-job.yaml"
+kubectl -n db-admin wait job/create-prod-db --for=condition=Complete --timeout=300s
+kubectl delete namespace db-admin # takes the admin credentials with it
 
 # envFrom is read only at pod start, so a rotated password needs a restart.
-if [[ "$SECRET_RESULT" == *configured* ]]; then
-  log "Secret changed: restarting backend"
+RESTART=()
+for ENV in dev prod; do
+  NS="url-shortener-$ENV"
+  if [ "$ENV" = dev ]; then DB_OUT=database_url; else DB_OUT=database_url_prod; fi
+  log "Namespace $NS and its Secrets"
+  kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+  # Value goes through a file descriptor, never through argv (visible in `ps`).
+  RESULT="$(kubectl -n "$NS" create secret generic backend-secret \
+    --from-env-file=<(printf 'DATABASE_URL=%s\n' "$(tf_out "$DB_OUT")") \
+    --dry-run=client -o yaml | kubectl apply -f -)"
+  echo "$RESULT"
+  if [[ "$RESULT" == *configured* ]]; then RESTART+=("$NS"); fi
+  # Cloudflare Origin CA cert for Traefik (Cloudflare SSL mode "Full (strict)").
+  kubectl -n "$NS" create secret tls origin-tls \
+    --cert=<(tf_out origin_cert_pem) --key=<(tf_out origin_key_pem) \
+    --dry-run=client -o yaml | kubectl apply -f -
+done
+
+log "Root Application: ArgoCD deploys apps/ from url-shortener-gitops"
+kubectl apply -f "$ROOT/argocd/root.yaml"
+for APP in root url-shortener-dev url-shortener-prod; do
+  until kubectl -n argocd get "application/$APP" >/dev/null 2>&1; do sleep 5; done
+  kubectl -n argocd wait "application/$APP" --timeout=600s \
+    --for=jsonpath='{.status.sync.status}'=Synced
+  kubectl -n argocd wait "application/$APP" --timeout=600s \
+    --for=jsonpath='{.status.health.status}'=Healthy
+done
+
+# (the +"..." form: macOS bash 3.2 with set -u rejects an empty array)
+for NS in ${RESTART[@]+"${RESTART[@]}"}; do
+  log "Secret changed: restarting backend in $NS"
   kubectl -n "$NS" rollout restart deploy/backend
   kubectl -n "$NS" rollout status deploy/backend --timeout=180s
-fi
+done
 
 log "Smoke test (through Cloudflare)"
-curl -fsS --retry 5 --retry-all-errors --retry-delay 5 "https://$DOMAIN/healthz" && echo
-echo "App: https://$DOMAIN"
+for HOST in "$DOMAIN" "dev.$DOMAIN"; do
+  curl -fsS --retry 5 --retry-all-errors --retry-delay 5 "https://$HOST/healthz" && echo
+done
+echo "prod: https://$DOMAIN   dev: https://dev.$DOMAIN"
 echo "kubectl: export KUBECONFIG=$KUBECONFIG"
 echo "ArgoCD UI: kubectl -n argocd port-forward svc/argocd-server 8080:443 (see argocd/values.yaml)"
